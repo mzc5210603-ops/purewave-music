@@ -58,7 +58,7 @@
     flex:1;display:flex;align-items:center;justify-content:center;
   }
   .dropcard{
-    width:min(600px,100%);
+    width:min(880px,100%);
     background:var(--panel);
     border:2px dashed #d8d8e4;border-radius:26px;
     padding:46px 40px;text-align:center;cursor:default;
@@ -82,7 +82,18 @@
     box-shadow:0 8px 20px -8px rgba(106,77,255,.6);transition:.15s;
   }
   .empty-search button:hover{background:#5a3af0}
-  .or{display:flex;align-items:center;gap:12px;color:var(--sub);font-size:12px;margin:24px 0 16px}
+  .or{display:flex;align-items:center;gap:12px;color:var(--sub);font-size:12px;margin:26px 0 16px}
+  .cats{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin:26px 0 0}
+  .cat{
+    display:flex;flex-direction:column;align-items:flex-start;gap:2px;
+    background:var(--panel);border:1px solid var(--line);border-radius:16px;
+    padding:16px 18px;cursor:pointer;font-family:inherit;text-align:left;transition:.15s;
+  }
+  .cat:hover{border-color:var(--accent);transform:translateY(-2px);box-shadow:0 12px 26px -14px rgba(106,77,255,.4)}
+  .cat .k{font-family:var(--mono);font-size:10px;color:var(--accent);letter-spacing:2px}
+  .cat .n{font-size:15px;font-weight:700;color:var(--ink);margin-top:5px}
+  .cat .d{font-size:11.5px;color:var(--sub);margin-top:2px}
+  .ghost-btn.nav-on{border-color:var(--accent);color:var(--accent);background:var(--accent-soft)}
   .or::before,.or::after{content:"";flex:1;height:1px;background:var(--line)}
   .local-btn{
     border:1px solid var(--line);background:#fff;border-radius:12px;height:42px;padding:0 24px;
@@ -272,6 +283,11 @@
     .pinfo{display:none}
     #viz{display:none}
     header{padding:14px 14px 0 14px}
+    .cats{grid-template-columns:repeat(2,1fr)}
+    .dropcard{padding:34px 22px}
+  }
+  @media (max-width:560px){
+    .cats{grid-template-columns:1fr}
   }
 </style>
 </head>
@@ -280,6 +296,8 @@
 <header>
   <div class="logo"><i></i><b>澄声</b><span>PUREWAVE</span></div>
   <div class="head-actions">
+    <button class="ghost-btn nav-on" id="navHome">首页</button>
+    <button class="ghost-btn" id="navStage">播放器</button>
     <button class="ghost-btn" id="btnAdd">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
       本地音乐
@@ -296,6 +314,14 @@
       <div class="empty-search">
         <input id="emptyQ" placeholder="输入歌名 / 艺术家 / 专辑，如 Grateful Dead">
         <button id="emptyGo">搜索</button>
+      </div>
+      <div class="cats">
+        <button class="cat" data-q="Beethoven symphony orchestra"><span class="k">01 / CLASSICAL</span><span class="n">古典交响</span><span class="d">贝多芬、莫扎特历史录音</span></button>
+        <button class="cat" data-q="Chopin piano nocturne"><span class="k">02 / PIANO</span><span class="n">钢琴独奏</span><span class="d">夜曲、练习曲、现场演奏</span></button>
+        <button class="cat" data-q="jazz live concert"><span class="k">03 / JAZZ</span><span class="n">爵士现场</span><span class="d">俱乐部与音乐节录音</span></button>
+        <button class="cat" data-q="Grateful Dead live concert"><span class="k">04 / LIVE</span><span class="n">摇滚现场</span><span class="d">完整演唱会无损音源</span></button>
+        <button class="cat" data-q="blues"><span class="k">05 / BLUES</span><span class="n">蓝调</span><span class="d">Delta 蓝调与经典老唱片</span></button>
+        <button class="cat" data-q="Chinese traditional music"><span class="k">06 / FOLK</span><span class="n">民乐国风</span><span class="d">传统器乐与地方民歌</span></button>
       </div>
       <div class="or">或</div>
       <button class="local-btn" id="emptyLocal">选择本地音乐文件</button>
@@ -648,8 +674,7 @@
     const t = tracks[cur];
     audio.src = t.url;
     audio.play().catch(()=>{});
-    $("#empty").style.display = "none";
-    $("#stage").style.display = "flex";
+    showView("stage");
     renderList(); renderNow(); renderPlayIcon();
     if ("mediaSession" in navigator){
       navigator.mediaSession.metadata = new MediaMetadata({
@@ -678,8 +703,7 @@
     tracks.splice(i,1);
     if (tracks.length === 0){
       cur = -1; audio.pause(); audio.removeAttribute("src");
-      $("#stage").style.display = "none";
-      $("#empty").style.display = "flex";
+      showView("home");
     } else if (i < cur){ cur--; }
     else if (i === cur){ play(Math.min(cur, tracks.length-1)); return; }
     renderList();
@@ -691,8 +715,7 @@
     if (!files.length) return;
     const results = await Promise.all(files.map(probe));
     tracks.push(...results);
-    $("#empty").style.display = "none";
-    $("#stage").style.display = "flex";
+    showView("stage");
     if (cur === -1) play(0); else renderList();
   }
 
@@ -770,6 +793,13 @@
 
   /* ---------- 在线搜索（Internet Archive 合法免费音源） ---------- */
   let mode = "local";
+
+  function showView(v){
+    $("#empty").style.display = v === "home" ? "flex" : "none";
+    $("#stage").style.display = v === "stage" ? "flex" : "none";
+    $("#navHome").classList.toggle("nav-on", v === "home");
+    $("#navStage").classList.toggle("nav-on", v === "stage");
+  }
 
   function toast(msg){
     const el = $("#toast");
@@ -873,8 +903,7 @@
               duration: null, cover: null, bits: null, sampleRate: null, channels: null,
               lossless: /\.(flac|wav)$/i.test(f.url), type: ext.toUpperCase(), remote: true
             });
-            $("#empty").style.display = "none";
-            $("#stage").style.display = "flex";
+            showView("stage");
             setMode("local");
             if (cur === -1) play(tracks.length - 1);
             else { renderList(); toast("已加入 1 首"); }
@@ -913,8 +942,7 @@
           remote: true
         });
       });
-      $("#empty").style.display = "none";
-      $("#stage").style.display = "flex";
+      showView("stage");
       setMode("local");
       if (cur === -1) play(start);
       else { renderList(); toast("已加入 " + picked.length + " 首"); }
@@ -939,8 +967,7 @@
   const goOnline = () => {
     const q = $("#emptyQ").value.trim();
     if (!q){ $("#emptyQ").focus(); return; }
-    $("#empty").style.display = "none";
-    $("#stage").style.display = "flex";
+    showView("stage");
     setMode("online");
     $("#search").value = q;
     doSearch();
@@ -951,6 +978,17 @@
   $("#btnClear").addEventListener("click", () => {
     while (tracks.length) removeTrack(0);
   });
+  $("#navHome").addEventListener("click", () => showView("home"));
+  $("#navStage").addEventListener("click", () => {
+    if (!tracks.length){ toast("曲库是空的，先搜索或添加音乐"); showView("home"); return; }
+    showView("stage");
+  });
+  document.querySelectorAll(".cat").forEach(b => b.addEventListener("click", () => {
+    showView("stage");
+    setMode("online");
+    $("#search").value = b.dataset.q;
+    doSearch();
+  }));
   $("#tabLocal").addEventListener("click", () => setMode("local"));
   $("#tabOnline").addEventListener("click", () => setMode("online"));
   $("#search").addEventListener("input", () => { if (mode === "local") renderList(); });
