@@ -134,6 +134,8 @@
   .tab.on{background:#fff;color:var(--accent-ink);font-weight:700;box-shadow:0 1px 4px rgba(20,21,25,.08)}
   .toast{position:fixed;top:20px;left:50%;transform:translateX(-50%) translateY(-8px);background:var(--ink);color:#fff;font-size:13px;letter-spacing:1px;padding:10px 20px;border-radius:12px;z-index:99;opacity:0;transition:.25s;pointer-events:none;box-shadow:0 10px 30px rgba(20,21,25,.3)}
   .toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+  .sec-row{display:flex;align-items:center;gap:10px;padding:12px 12px 6px;font-size:11px;color:var(--sub);letter-spacing:2px}
+  .sec-row::after{content:"";flex:1;height:1px;background:var(--line)}
   .tracks{flex:1;overflow-y:auto;padding:8px}
   .track{
     display:flex;align-items:center;gap:12px;
@@ -788,36 +790,101 @@
     else $("#tracks").innerHTML = '<div class="track"><span class="no">☁</span><div class="meta"><div class="t">输入关键词搜索</div><div class="a">内容来自 Internet Archive 公有领域 / CC 授权音库</div></div></div>';
   }
 
+  function resultRow(o){
+    const row = document.createElement("div");
+    row.className = "track";
+    row.innerHTML = `<span class="no">${o.icon}</span>
+      <div class="meta"><div class="t"></div><div class="a"></div></div>
+      <span class="spec">${o.chip}</span>`;
+    row.querySelector(".t").textContent = o.title;
+    row.querySelector(".a").textContent = o.sub;
+    if (o.onClick) row.addEventListener("click", o.onClick);
+    else { row.style.pointerEvents = "none"; row.style.opacity = ".6"; }
+    return row;
+  }
+  function secRow(label){
+    const d = document.createElement("div");
+    d.className = "sec-row";
+    d.textContent = label;
+    return d;
+  }
+
+  async function searchIA(q){
+    const qs = `(${q}) AND mediatype:audio`;
+    const url = "https://archive.org/advancedsearch.php?q=" + encodeURIComponent(qs) +
+      "&fl%5B%5D=identifier&fl%5B%5D=title&fl%5B%5D=creator&fl%5B%5D=year&fl%5B%5D=downloads&rows=25&page=1&output=json";
+    const data = await fetch(url).then(r => r.json());
+    return (data.response && data.response.docs) || [];
+  }
+
+  async function searchCommons(q){
+    const s = "https://commons.wikimedia.org/w/api.php?action=query&format=json&origin=*&list=search&srnamespace=6&srlimit=25&srsearch=" +
+      encodeURIComponent(q + " filetype:audio");
+    const data = await fetch(s).then(r => r.json());
+    const hits = (data.query && data.query.search) || [];
+    if (!hits.length) return [];
+    const titles = hits.map(h => h.title).slice(0, 20).join("|");
+    const m = await fetch("https://commons.wikimedia.org/w/api.php?action=query&format=json&origin=*&prop=imageinfo&iiprop=url%7Cmime%7Csize&titles=" +
+      encodeURIComponent(titles)).then(r => r.json());
+    const pages = (m.query && m.query.pages) || {};
+    const out = [];
+    Object.values(pages).forEach(p => {
+      const ii = p.imageinfo && p.imageinfo[0];
+      if (!ii || !/^audio\//.test(ii.mime || "") || /midi/.test(ii.mime)) return;
+      out.push({
+        title: p.title.replace(/^File:/, "").replace(/\.[^.]+$/, "").replace(/_/g, " "),
+        url: ii.url, mime: ii.mime
+      });
+    });
+    return out;
+  }
+
   async function doSearch(){
     const q = $("#search").value.trim();
     if (!q) return;
     const box = $("#tracks");
     box.innerHTML = '<div class="track"><span class="no">…</span><div class="meta"><div class="t">正在搜索…</div></div></div>';
-    try{
-      const qs = `(${q}) AND mediatype:audio AND format:(Flac)`;
-      const url = "https://archive.org/advancedsearch.php?q=" + encodeURIComponent(qs) +
-        "&fl%5B%5D=identifier&fl%5B%5D=title&fl%5B%5D=creator&fl%5B%5D=year&fl%5B%5D=downloads&rows=30&page=1&output=json";
-      const data = await fetch(url).then(r => r.json());
-      const docs = (data.response && data.response.docs) || [];
-      box.innerHTML = "";
-      if (!docs.length){
-        box.innerHTML = '<div class="track"><span class="no">∅</span><div class="meta"><div class="t">没有找到相关内容</div><div class="a">换个关键词试试</div></div></div>';
-        return;
-      }
-      docs.forEach(d => {
-        const row = document.createElement("div");
-        row.className = "track";
+    const [ia, wc] = await Promise.allSettled([searchIA(q), searchCommons(q)]);
+    box.innerHTML = "";
+    let n = 0;
+    if (ia.status === "fulfilled" && ia.value.length){
+      box.appendChild(secRow("Internet Archive · 免费曲库"));
+      ia.value.forEach(d => {
         const creator = Array.isArray(d.creator) ? d.creator.join(" / ") : (d.creator || "未知艺术家");
-        row.innerHTML = `<span class="no">☁</span>
-          <div class="meta"><div class="t"></div><div class="a"></div></div>
-          <span class="spec">FLAC</span>`;
-        row.querySelector(".t").textContent = d.title || d.identifier;
-        row.querySelector(".a").textContent = creator + (d.year ? " · " + d.year : "");
-        row.addEventListener("click", () => loadItem(d.identifier, creator));
-        box.appendChild(row);
+        box.appendChild(resultRow({
+          icon: "☁", title: d.title || d.identifier,
+          sub: creator + (d.year ? " · " + d.year : ""),
+          chip: "IA",
+          onClick: () => loadItem(d.identifier, creator)
+        }));
+        n++;
       });
-    }catch(e){
-      box.innerHTML = '<div class="track"><span class="no">!</span><div class="meta"><div class="t">搜索失败</div><div class="a">网络无法连接 archive.org</div></div></div>';
+    }
+    if (wc.status === "fulfilled" && wc.value.length){
+      box.appendChild(secRow("Wikimedia Commons · 公有领域"));
+      wc.value.forEach(f => {
+        const ext = (f.url.match(/\.([a-z0-9]+)$/i) || [,"audio"])[1];
+        box.appendChild(resultRow({
+          icon: "☁", title: f.title, sub: "Wikimedia Commons",
+          chip: ext.toUpperCase(),
+          onClick: () => {
+            tracks.push({
+              url: f.url, title: f.title, artist: "Wikimedia Commons",
+              duration: null, cover: null, bits: null, sampleRate: null, channels: null,
+              lossless: /\.(flac|wav)$/i.test(f.url), type: ext.toUpperCase(), remote: true
+            });
+            $("#empty").style.display = "none";
+            $("#stage").style.display = "flex";
+            setMode("local");
+            if (cur === -1) play(tracks.length - 1);
+            else { renderList(); toast("已加入 1 首"); }
+          }
+        }));
+        n++;
+      });
+    }
+    if (!n){
+      box.appendChild(resultRow({ icon: "∅", title: "没有找到相关内容", sub: "试试英文关键词：艺术家 / 流派 / 作品名" }));
     }
   }
 
